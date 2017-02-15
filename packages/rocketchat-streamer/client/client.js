@@ -15,7 +15,7 @@ class StreamerCentral extends EV {
 
 	}
 
-	setupDdpConnection(name, ddpConnection) {
+	setupDdpConnection(name, server, ddpConnection) {
 		// make sure we only setup event listeners for each ddp connection once
 		if (ddpConnection.hasMeteorStreamerEventListeners) {
 			return;
@@ -24,43 +24,45 @@ class StreamerCentral extends EV {
 			const msg = DDPCommon.parseDDP(raw_msg);
 			if (msg && msg.msg === 'changed' && msg.collection && msg.fields && msg.fields.eventName && msg.fields.args) {
 				msg.fields.args.unshift(msg.fields.eventName);
-				msg.fields.args.unshift(msg.collection);
+				msg.fields.args.unshift(msg.collection +'-'+ server);
 				this.emit.apply(this, msg.fields.args);
 			}
 		});
 		// store ddp connection
-		this.storeDdpConnection(name, ddpConnection);
+		this.storeDdpConnection(name, server, ddpConnection);
 
 	}
 
-	storeDdpConnection(name, ddpConnection) {
+	storeDdpConnection(name, server, ddpConnection) {
 		// mark the connection as setup for Streamer, and store it
 		ddpConnection.hasMeteorStreamerEventListeners = true;
-		this.ddpConnections[name] = ddpConnection;
+		this.ddpConnections[name + server] = ddpConnection;
 	}
 }
 
 Meteor.StreamerCentral = new StreamerCentral;
 
 Meteor.Streamer = class Streamer extends EV {
-	constructor(name, {useCollection = false, ddpConnection = Meteor.connection } = {}) {
-		if (Meteor.StreamerCentral.instances[name]) {
-			console.warn('Streamer instance already exists:', name);
-			return Meteor.StreamerCentral.instances[name];
+	constructor(name, {useCollection = false, server = '', ddpConnection = Meteor.connection } = {}) {
+    server = server || '';
+    if (Meteor.StreamerCentral.instances[name + server]) {
+			console.warn('Streamer instance already exists:', name + server);
+			return Meteor.StreamerCentral.instances[name + server];
 		}
-		Meteor.StreamerCentral.setupDdpConnection(name, ddpConnection);
+		Meteor.StreamerCentral.setupDdpConnection(name, server, ddpConnection);
 
 		super();
 
 		this.ddpConnection = ddpConnection || Meteor.connection;
 
-		Meteor.StreamerCentral.instances[name] = this;
+		Meteor.StreamerCentral.instances[name + server] = this;
 
 		this.name = name;
+		this.server = server;
 		this.useCollection = useCollection;
 		this.subscriptions = {};
 
-		Meteor.StreamerCentral.on(this.subscriptionName, (eventName, ...args) => {
+		Meteor.StreamerCentral.on(this.subscriptionName +'-'+ this.server, (eventName, ...args) => {
 			if (this.subscriptions[eventName]) {
 				this.subscriptions[eventName].lastMessage = args;
 				super.emit.call(this, eventName, ...args);
